@@ -66,6 +66,12 @@ stapling, and Gatekeeper verification. Installer versions must match the manifes
 - Windows: open **Installed apps**, select **BumpMesh for Fusion**, and choose
   **Uninstall**.
 
+## Support future tools
+
+BumpMesh for Fusion is free and open source. If it helps in your shop, you can
+optionally **[support future Extrusion Therapy tools](https://buy.stripe.com/fZu3cw2Mnfr0d7N3ws1kA00)**.
+The installers and source remain available without payment.
+
 ## Attribution and license
 
 BumpMesh is by CNC Kitchen (Stefan Hermann and contributors). The Fusion
