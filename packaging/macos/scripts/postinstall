@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+CONSOLE_USER=$(/usr/bin/stat -f '%Su' /dev/console)
+if [ -z "$CONSOLE_USER" ] || [ "$CONSOLE_USER" = "root" ]; then
+  echo "Unable to determine the signed-in macOS user." >&2
+  exit 1
+fi
+
+USER_HOME=$(/usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory | /usr/bin/awk '{print $2}')
+SOURCE_DIR="/private/tmp/com.extrusiontherapy.bumpmeshforfusion/BumpMeshForFusion"
+INSTALL_PARENT="$USER_HOME/Library/Application Support/Autodesk/FusionAddins"
+INSTALL_DIR="$INSTALL_PARENT/BumpMeshForFusion"
+LEGACY_DIR="$USER_HOME/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns/BumpMeshForFusion"
+
+/bin/mkdir -p "$INSTALL_PARENT"
+/bin/rm -rf "$INSTALL_DIR" "$LEGACY_DIR"
+/bin/cp -R "$SOURCE_DIR" "$INSTALL_DIR"
+/usr/sbin/chown -R "$CONSOLE_USER":staff "$INSTALL_DIR"
+/bin/rm -rf "/private/tmp/com.extrusiontherapy.bumpmeshforfusion"
+
+exit 0
+

@@ -1,0 +1,14 @@
+{
+  "autodeskProduct": "Fusion",
+  "type": "addin",
+  "id": "f1b4e3b5-254d-4dbc-9af7-b7ef3e9f00f4",
+  "author": "Extrusion Therapy",
+  "description": {
+    "": "Send an editable Fusion body to BumpMesh and save the finished textured STL without changing the source model."
+  },
+  "version": "0.1.0",
+  "runOnStartup": true,
+  "supportedOS": "windows|mac",
+  "editEnabled": true,
+  "iconFilename": "resources/64x64.png"
+}

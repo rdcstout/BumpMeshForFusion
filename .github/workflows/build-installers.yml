@@ -1,0 +1,59 @@
+name: Build installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Installer version
+        required: true
+        default: 0.1.0
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build macOS installer
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then VERSION="${GITHUB_REF_NAME#v}"; fi
+          chmod +x packaging/macos/build-pkg.sh packaging/macos/scripts/postinstall
+          packaging/macos/build-pkg.sh "$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BumpMeshForFusion-macOS
+          path: dist/BumpMeshForFusion-macOS.pkg
+
+  manual:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build manual installation archive
+        run: |
+          chmod +x packaging/build-manual-zip.sh
+          packaging/build-manual-zip.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BumpMeshForFusion-Manual
+          path: dist/BumpMeshForFusion-Manual.zip
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --no-progress -y
+      - name: Build Windows installer
+        shell: powershell
+        run: |
+          $version = "${{ inputs.version }}"
+          if (-not $version) { $version = "${env:GITHUB_REF_NAME}".TrimStart("v") }
+          .\packaging\windows\build-installer.ps1 -Version $version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BumpMeshForFusion-Windows
+          path: dist/BumpMeshForFusion-Windows-Setup.exe
