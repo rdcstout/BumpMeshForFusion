@@ -1,5 +1,7 @@
 # BumpMesh for Fusion
 
+![BumpMesh for Fusion running natively inside Autodesk Fusion](docs/images/bumpmesh-for-fusion-hero.png)
+
 Send a copy of an editable Autodesk Fusion solid body into BumpMesh, choose
 the faces to texture there, and save the finished STL or 3MF. The
 source Fusion body and its timeline are never modified.
