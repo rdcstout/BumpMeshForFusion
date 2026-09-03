@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 param(
     [string]$Version = ""
 )
@@ -5,7 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 $ScriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDirectory = Resolve-Path (Join-Path $ScriptDirectory "..\..")
-$ManifestVersion = (Get-Content (Join-Path $ProjectDirectory 'BumpMeshForFusion.manifest') -Raw | ConvertFrom-Json).version
+$ManifestVersion = (Get-Content (Join-Path $ProjectDirectory 'BumpMeshForFusion.manifest') -Raw | ConvertFrom-Json -AsHashtable).version
 if (-not $Version) { $Version = $ManifestVersion }
 if ($Version -ne $ManifestVersion) { throw 'Installer version must match the add-in manifest.' }
 $Compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
