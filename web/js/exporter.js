@@ -15,11 +15,7 @@ import { QuantizedPointMap } from './meshIndex.js';
 function triggerDownload(buffer, filename, mime = 'application/octet-stream') {
   const fusionBridge = globalThis.bumpMeshFusionBridge;
   if (fusionBridge && typeof fusionBridge.saveBinary === 'function') {
-    fusionBridge.saveBinary(buffer, filename, mime).catch((error) => {
-      console.error(error);
-      alert(error.message || String(error));
-    });
-    return;
+    return fusionBridge.saveBinary(buffer, filename, mime);
   }
   const blob = new Blob([buffer], { type: mime });
   const url  = URL.createObjectURL(blob);
@@ -92,7 +88,7 @@ export function exportSTL(geometry, filename = 'textured.stl') {
     // Attribute byte count: 0 (already zero-filled)
   }
 
-  triggerDownload(buffer, filename);
+  return triggerDownload(buffer, filename);
 }
 
 /**
@@ -236,7 +232,7 @@ export function export3MF(geometry, filename = 'textured.3mf') {
     '3D/3dmodel.model':    modelBytes,
   }, { level: 6 });
 
-  triggerDownload(
+  return triggerDownload(
     zipped,
     filename,
     'application/vnd.ms-package.3dmanufacturing-3dmodel+xml'

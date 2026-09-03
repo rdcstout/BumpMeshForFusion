@@ -7,17 +7,46 @@ if [ -z "$CONSOLE_USER" ] || [ "$CONSOLE_USER" = "root" ]; then
   exit 1
 fi
 
-USER_HOME=$(/usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory | /usr/bin/awk '{print $2}')
+USER_HOME=$(/usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory | /usr/bin/sed 's/^NFSHomeDirectory: //')
+case "$USER_HOME" in
+  /*) ;;
+  *) echo "Unable to determine the signed-in user's home directory." >&2; exit 1 ;;
+esac
 SOURCE_DIR="/private/tmp/com.extrusiontherapy.bumpmeshforfusion/BumpMeshForFusion"
 INSTALL_PARENT="$USER_HOME/Library/Application Support/Autodesk/FusionAddins"
 INSTALL_DIR="$INSTALL_PARENT/BumpMeshForFusion"
 LEGACY_DIR="$USER_HOME/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns/BumpMeshForFusion"
 
 /bin/mkdir -p "$INSTALL_PARENT"
-/bin/rm -rf "$INSTALL_DIR" "$LEGACY_DIR"
-/bin/cp -R "$SOURCE_DIR" "$INSTALL_DIR"
-/usr/sbin/chown -R "$CONSOLE_USER":staff "$INSTALL_DIR"
-/bin/rm -rf "/private/tmp/com.extrusiontherapy.bumpmeshforfusion"
+STAGE=$(/usr/bin/mktemp -d "$INSTALL_PARENT/.bumpmesh-install.XXXXXX")
+HAD_CURRENT=0
+HAD_LEGACY=0
+PROMOTED=0
+finish() {
+  result=$?
+  trap - EXIT
+  if [ "$result" -ne 0 ]; then
+    if [ "$PROMOTED" -eq 1 ]; then /bin/rm -rf "$INSTALL_DIR"; fi
+    if [ "$HAD_CURRENT" -eq 1 ]; then /bin/mv "$STAGE/previous" "$INSTALL_DIR"; fi
+    if [ "$HAD_LEGACY" -eq 1 ]; then /bin/mv "$STAGE/legacy" "$LEGACY_DIR"; fi
+  fi
+  # Leave a backup intact if restoration itself fails.
+  if [ ! -e "$STAGE/previous" ] && [ ! -e "$STAGE/legacy" ]; then /bin/rm -rf "$STAGE"; fi
+  exit "$result"
+}
+trap finish EXIT
+trap 'exit 1' HUP INT TERM
+/bin/cp -R "$SOURCE_DIR" "$STAGE/new"
+/usr/sbin/chown -R "$CONSOLE_USER":staff "$STAGE/new"
+[ -f "$STAGE/new/BumpMeshForFusion.py" ] && [ -f "$STAGE/new/BumpMeshForFusion.manifest" ]
+if [ -e "$INSTALL_DIR" ]; then /bin/mv "$INSTALL_DIR" "$STAGE/previous"; HAD_CURRENT=1; fi
+if [ -e "$LEGACY_DIR" ]; then /bin/mv "$LEGACY_DIR" "$STAGE/legacy"; HAD_LEGACY=1; fi
+/bin/mv "$STAGE/new" "$INSTALL_DIR"
+PROMOTED=1
+# Only discard old installations once the replacement is in place.
+# Cleanup failure must never roll back an already completed installation.
+trap - EXIT HUP INT TERM
+/bin/rm -rf "$STAGE" || echo "Installation complete; staging cleanup was incomplete." >&2
+/bin/rm -rf "/private/tmp/com.extrusiontherapy.bumpmeshforfusion" || true
 
 exit 0
-

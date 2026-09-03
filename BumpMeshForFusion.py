@@ -11,9 +11,13 @@ import threading
 import traceback
 import urllib.parse
 import uuid
+import html
+from contextlib import contextmanager
 
 import adsk.core
 import adsk.fusion
+
+from . import updates
 
 
 COMMAND_ID = 'ExtrusionTherapyBumpMeshCommand'
@@ -31,6 +35,8 @@ PALETTE_WIDTH_FRACTION = 0.48
 PALETTE_FALLBACK_WIDTH = 760
 PALETTE_FALLBACK_HEIGHT = 760
 MAX_UPLOAD_BYTES = 1_500_000_000
+UPDATE_COMMAND_ID = 'BumpMeshCheckForUpdates'
+UPDATE_EVENT_ID = 'BumpMeshUpdateResult'
 
 _handlers = []
 _server = None
@@ -38,6 +44,48 @@ _server_thread = None
 _server_token = None
 _jobs = {}
 _jobs_lock = threading.Lock()
+_temporary_directory = None
+_updater = None
+_update_command = None
+_update_result = None
+_palette_handlers = []
+
+
+@contextmanager
+def _job_access(job_id):
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job and not job.get('retired'):
+            job['users'] = job.get('users', 0) + 1
+        else:
+            job = None
+    try:
+        yield job
+    finally:
+        if job:
+            with _jobs_lock:
+                job['users'] -= 1
+            _clean_retired_jobs()
+
+
+def _clean_retired_jobs(keep=None):
+    global _temporary_directory
+    with _jobs_lock:
+        for key, job in list(_jobs.items()):
+            if keep is not None and key != keep:
+                job['retired'] = True
+            if job.get('retired') and not job.get('users', 0):
+                try:
+                    shutil.rmtree(job['directory'])
+                except OSError:
+                    continue  # Retry on the next transition or at shutdown.
+                del _jobs[key]
+        if not _jobs and _server is None and _temporary_directory is not None:
+            try:
+                _temporary_directory.cleanup()
+            except OSError:
+                return
+            _temporary_directory = None
 
 
 def _web_root():
@@ -82,8 +130,8 @@ class _BridgeHandler(http.server.SimpleHTTPRequestHandler):
     def _authorized(self, query):
         supplied = query.get('token', [''])[0]
         return bool(_server_token) and secrets.compare_digest(
-            supplied,
-            _server_token,
+            supplied.encode('utf-8'),
+            _server_token.encode('utf-8'),
         )
 
     def do_GET(self):
@@ -96,26 +144,17 @@ class _BridgeHandler(http.server.SimpleHTTPRequestHandler):
             pieces = [piece for piece in path.split('/') if piece]
             if len(pieces) == 4 and pieces[0] == 'api' and pieces[1] == 'jobs' and pieces[3] == 'source':
                 job_id = pieces[2]
-                with _jobs_lock:
-                    job = _jobs.get(job_id)
+                with _job_access(job_id) as job:
                     source_path = job.get('source') if job else None
-                if not source_path or not os.path.isfile(source_path):
-                    _json_response(self, 404, {'error': 'Fusion export not found.'})
-                    return
-
-                file_size = os.path.getsize(source_path)
-                self.send_response(200)
-                self.send_header('Content-Type', 'model/stl')
-                self.send_header('Content-Length', str(file_size))
-                self.send_header(
-                    'Content-Disposition',
-                    'attachment; filename="{}"'.format(
-                        os.path.basename(source_path)
-                    ),
-                )
-                self.end_headers()
-                with open(source_path, 'rb') as source_file:
-                    shutil.copyfileobj(source_file, self.wfile)
+                    if not source_path or not os.path.isfile(source_path):
+                        _json_response(self, 404, {'error': 'Fusion export not found.'})
+                        return
+                    with open(source_path, 'rb') as source_file:
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'model/stl')
+                        self.send_header('Content-Length', str(os.fstat(source_file.fileno()).st_size))
+                        self.end_headers()
+                        shutil.copyfileobj(source_file, self.wfile)
                 return
 
             _json_response(self, 404, {'error': 'Unknown API route.'})
@@ -154,40 +193,35 @@ class _BridgeHandler(http.server.SimpleHTTPRequestHandler):
             _json_response(self, 400, {'error': 'Unsupported export format.'})
             return
 
-        with _jobs_lock:
-            job = _jobs.get(job_id)
-        if not job:
-            _json_response(self, 404, {'error': 'Unknown Fusion job.'})
-            return
-
-        output_id = uuid.uuid4().hex
-        output_path = os.path.join(
-            job['directory'],
-            '{}{}'.format(output_id, extension),
-        )
-        remaining = content_length
-        with open(output_path, 'wb') as output_file:
-            while remaining:
-                chunk = self.rfile.read(min(1024 * 1024, remaining))
-                if not chunk:
-                    raise IOError('Export upload ended unexpectedly.')
-                output_file.write(chunk)
-                remaining -= len(chunk)
-
-        with _jobs_lock:
-            job['outputs'][output_id] = {
-                'path': output_path,
-                'filename': requested_name,
-            }
-        _json_response(
-            self,
-            200,
-            {
-                'jobId': job_id,
-                'outputId': output_id,
-                'filename': requested_name,
-            },
-        )
+        with _job_access(job_id) as job:
+            if not job:
+                _json_response(self, 404, {'error': 'Unknown Fusion job.'})
+                return
+            output_id = uuid.uuid4().hex
+            output_path = os.path.join(job['directory'], output_id + extension)
+            try:
+                self.connection.settimeout(60)
+                remaining = content_length
+                with open(output_path, 'wb') as output_file:
+                    while remaining:
+                        chunk = self.rfile.read(min(1024 * 1024, remaining))
+                        if not chunk:
+                            raise IOError('Export upload ended unexpectedly.')
+                        output_file.write(chunk)
+                        remaining -= len(chunk)
+                with _jobs_lock:
+                    job['outputs'][output_id] = {'path': output_path, 'filename': requested_name}
+                _json_response(self, 200, {'jobId': job_id, 'outputId': output_id,
+                                           'filename': requested_name})
+            except OSError:
+                with _jobs_lock:
+                    job['outputs'].pop(output_id, None)
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+                try:
+                    _json_response(self, 400, {'error': 'Upload interrupted. Export again to retry.'})
+                except OSError:
+                    pass
 
 
 def _start_server():
@@ -222,27 +256,34 @@ def _selected_body(selection_input):
 
 
 def _export_body(body):
+    global _temporary_directory
     app = adsk.core.Application.get()
     design = adsk.fusion.Design.cast(app.activeProduct)
     if not design:
         raise RuntimeError('Open a Fusion design before launching BumpMesh.')
 
     job_id = uuid.uuid4().hex
-    job_directory = tempfile.mkdtemp(prefix='bumpmesh-fusion-')
+    if _temporary_directory is None:
+        _temporary_directory = tempfile.TemporaryDirectory(prefix='bumpmesh-fusion-')
+    job_directory = tempfile.mkdtemp(dir=_temporary_directory.name)
     source_name = '{}.stl'.format(_safe_name(body.name))
     source_path = os.path.join(job_directory, source_name)
 
-    options = design.exportManager.createSTLExportOptions(body, source_path)
-    if not options:
-        raise RuntimeError('Fusion could not prepare the selected body for STL export.')
-    options.sendToPrintUtility = False
-    options.isBinaryFormat = True
-    options.meshRefinement = adsk.fusion.MeshRefinementSettings.MeshRefinementHigh
-    options.unitType = adsk.fusion.DistanceUnits.MillimeterDistanceUnits
-    if not design.exportManager.execute(options):
-        raise RuntimeError('Fusion could not export the selected body.')
-    if not os.path.isfile(source_path):
-        raise RuntimeError('Fusion reported success but did not create the temporary STL.')
+    try:
+        options = design.exportManager.createSTLExportOptions(body, source_path)
+        if not options:
+            raise RuntimeError('Fusion could not prepare the selected body for STL export.')
+        options.sendToPrintUtility = False
+        options.isBinaryFormat = True
+        options.meshRefinement = adsk.fusion.MeshRefinementSettings.MeshRefinementHigh
+        options.unitType = adsk.fusion.DistanceUnits.MillimeterDistanceUnits
+        if not design.exportManager.execute(options):
+            raise RuntimeError('Fusion could not export the selected body.')
+        if not os.path.isfile(source_path):
+            raise RuntimeError('Fusion reported success but did not create the temporary STL.')
+    except Exception:
+        shutil.rmtree(job_directory, ignore_errors=True)
+        raise
 
     with _jobs_lock:
         _jobs[job_id] = {
@@ -271,6 +312,7 @@ def _show_palette(job_id, source_name):
     if palette:
         palette.deleteMe()
         adsk.doEvents()
+    _palette_handlers.clear()
 
     viewport = app.activeViewport
     if viewport:
@@ -293,7 +335,7 @@ def _show_palette(job_id, source_name):
     )
     html_handler = _PaletteHTMLHandler()
     palette.incomingFromHTML.add(html_handler)
-    _handlers.append(html_handler)
+    _palette_handlers.append(html_handler)
     palette.dockingOption = (
         adsk.core.PaletteDockingOptions.PaletteDockOptionsToVerticalAndHorizontal
     )
@@ -305,20 +347,31 @@ def _show_palette(job_id, source_name):
         adsk.core.PaletteDockingStates.PaletteDockStateRight
     )
     palette.setSize(palette_width, palette_height)
+    _clean_retired_jobs(keep=job_id)
     adsk.doEvents()
 
 
 def _save_output(payload):
+    with _job_access(payload.get('jobId', '')) as job:
+        output_id = payload.get('outputId', '')
+        output = job.get('outputs', {}).get(output_id) if job else None
+        if not output or not os.path.isfile(output['path']):
+            raise RuntimeError('The finished export could not be found. Export again to retry.')
+        try:
+            return _save_file(output)
+        finally:
+            # Retrying Export produces a fresh output. Never retain abandoned staging copies.
+            with _jobs_lock:
+                job['outputs'].pop(output_id, None)
+            try:
+                os.remove(output['path'])
+            except OSError:
+                pass
+
+
+def _save_file(output):
     app = adsk.core.Application.get()
     ui = app.userInterface
-    job_id = payload.get('jobId', '')
-    output_id = payload.get('outputId', '')
-    with _jobs_lock:
-        job = _jobs.get(job_id)
-        output = job.get('outputs', {}).get(output_id) if job else None
-    if not output or not os.path.isfile(output['path']):
-        raise RuntimeError('The finished BumpMesh export could not be found.')
-
     extension = os.path.splitext(output['filename'])[1].lower()
     dialog = ui.createFileDialog()
     dialog.title = 'Save textured {}'.format(extension.upper().lstrip('.'))
@@ -334,7 +387,14 @@ def _save_output(payload):
     destination = dialog.filename
     if not destination.lower().endswith(extension):
         destination += extension
-    shutil.copyfile(output['path'], destination)
+    fd, staged = tempfile.mkstemp(prefix='.bumpmesh-', dir=os.path.dirname(destination))
+    os.close(fd)
+    try:
+        shutil.copyfile(output['path'], staged)
+        os.replace(staged, destination)
+    finally:
+        if os.path.exists(staged):
+            os.remove(staged)
     return {'status': 'saved', 'path': destination}
 
 
@@ -346,11 +406,11 @@ class _PaletteHTMLHandler(adsk.core.HTMLEventHandler):
             else:
                 result = {'status': 'ignored'}
             args.returnData = json.dumps(result)
-        except:
+        except Exception as error:
             args.returnData = json.dumps(
                 {
                     'status': 'error',
-                    'message': traceback.format_exc(),
+                    'message': 'Could not save the export. {}. Export again to retry.'.format(str(error)),
                 }
             )
 
@@ -362,6 +422,7 @@ class _ExecuteHandler(adsk.core.CommandEventHandler):
 
     def notify(self, _args):
         ui = adsk.core.Application.get().userInterface
+        job_id = None
         try:
             body = _selected_body(self.selection_input)
             if not body:
@@ -369,6 +430,10 @@ class _ExecuteHandler(adsk.core.CommandEventHandler):
             job_id, source_name = _export_body(body)
             _show_palette(job_id, source_name)
         except:
+            if job_id:
+                with _jobs_lock:
+                    _jobs[job_id]['retired'] = True
+                _clean_retired_jobs()
             ui.messageBox('BumpMesh failed:\n{}'.format(traceback.format_exc()))
 
 
@@ -402,10 +467,94 @@ class _CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
 
         execute_handler = _ExecuteHandler(selection_input)
         args.command.execute.add(execute_handler)
-        _handlers.append(execute_handler)
+        destroyed = _ReleaseHandlers([execute_handler])
+        args.command.destroy.add(destroyed)
+        _handlers.extend([execute_handler, destroyed])
+
+
+class _ReleaseHandlers(adsk.core.CommandEventHandler):
+    def __init__(self, handlers):
+        super().__init__()
+        self.handlers = handlers
+
+    def notify(self, _args):
+        for handler in self.handlers + [self]:
+            if handler in _handlers:
+                _handlers.remove(handler)
+
+
+def _update_text(result):
+    if result['status'] == 'available':
+        return ('Version {} is available. <a href="{}">Download installer</a>.'
+                '<br>Installation is manual. Close Fusion before running the installer.').format(
+                    html.escape(result['version']), html.escape(result['url'], quote=True))
+    if result['status'] == 'current':
+        return 'Your installed version is up to date. No newer compatible stable release is available.'
+    return html.escape(result['message'])
+
+
+class _UpdateResultHandler(adsk.core.CustomEventHandler):
+    def notify(self, args):
+        global _update_result
+        payload = json.loads(args.additionalInfo)
+        result = payload['result']
+        if _updater is None:
+            return
+        if _update_command is not None and _update_command.isValid:
+            _update_result = result
+            _update_command.commandInputs.itemById('updateStatus').formattedText = _update_text(result)
+        if result['status'] == 'available':
+            definition = adsk.core.Application.get().userInterface.commandDefinitions.itemById(UPDATE_COMMAND_ID)
+            if definition:
+                # Quiet notification in the existing menu, never a modal startup prompt.
+                definition.name = 'Check for Updates (update available)'
+                definition.tooltip = 'BumpMesh for Fusion {} is available.'.format(result['version'])
+
+
+class _UpdateExecuteHandler(adsk.core.CommandEventHandler):
+    def __init__(self, command):
+        super().__init__()
+        self.command = command
+
+    def notify(self, _args):
+        automatic = self.command.commandInputs.itemById('automaticUpdates').value
+        dismissed = _update_result['version'] if _update_result and _update_result['status'] == 'available' else None
+        try:
+            _updater.configure(automatic, dismissed)
+        except OSError:
+            adsk.core.Application.get().userInterface.messageBox('Could not save update preferences. Please try again.')
+            return
+        definition = adsk.core.Application.get().userInterface.commandDefinitions.itemById(UPDATE_COMMAND_ID)
+        if definition:
+            definition.name = 'Check for Updates'
+
+
+class _UpdateDestroyedHandler(_ReleaseHandlers):
+    def notify(self, _args):
+        global _update_command, _update_result
+        _update_command, _update_result = None, None
+        super().notify(_args)
+
+
+class _UpdateCreatedHandler(adsk.core.CommandCreatedEventHandler):
+    def notify(self, args):
+        global _update_command, _update_result
+        _update_command, _update_result = args.command, None
+        args.command.okButtonText = 'Done'
+        inputs = args.command.commandInputs
+        status = inputs.addTextBoxCommandInput('updateStatus', '', 'Checking for updates…', 4, True)
+        status.isFullWidth = True
+        inputs.addBoolValueInput('automaticUpdates', 'Check automatically every week', True, '', _updater.state['automatic'])
+        execute = _UpdateExecuteHandler(args.command)
+        destroyed = _UpdateDestroyedHandler([execute])
+        args.command.execute.add(execute)
+        args.command.destroy.add(destroyed)
+        _handlers.extend([execute, destroyed])
+        _updater.request()
 
 
 def run(_context):
+    global _updater
     app = adsk.core.Application.get()
     ui = app.userInterface
     try:
@@ -439,15 +588,38 @@ def run(_context):
         control.isVisible = True
         control.isPromotedByDefault = True
         control.isPromoted = True
+        update_definition = ui.commandDefinitions.itemById(UPDATE_COMMAND_ID)
+        if not update_definition:
+            update_definition = ui.commandDefinitions.addButtonDefinition(
+                UPDATE_COMMAND_ID, 'Check for Updates', 'Check for a newer BumpMesh for Fusion installer.')
+        update_created = _UpdateCreatedHandler()
+        update_definition.commandCreated.add(update_created)
+        _handlers.append(update_created)
+        if not panel.controls.itemById(UPDATE_COMMAND_ID):
+            panel.controls.addCommand(update_definition)
+        event = app.registerCustomEvent(UPDATE_EVENT_ID)
+        update_handler = _UpdateResultHandler()
+        event.add(update_handler)
+        _handlers.append(update_handler)
+        with open(os.path.join(os.path.dirname(__file__), 'BumpMeshForFusion.manifest'), encoding='utf-8') as handle:
+            installed_version = json.load(handle)['version']
+        _updater = updates.UpdateChecker(installed_version, lambda result, manual:
+            app.fireCustomEvent(UPDATE_EVENT_ID, json.dumps({'result': result, 'manual': manual})))
+        _updater.start()
         adsk.autoTerminate(False)
     except:
         ui.messageBox('BumpMesh setup failed:\n{}'.format(traceback.format_exc()))
 
 
 def stop(_context):
-    global _server, _server_thread, _server_token
+    global _server, _server_thread, _server_token, _temporary_directory, _updater, _update_command, _update_result
     app = adsk.core.Application.get()
     ui = app.userInterface
+    if _updater:
+        _updater.stop()
+        _updater = None
+        app.unregisterCustomEvent(UPDATE_EVENT_ID)
+    _update_command, _update_result = None, None
 
     palette = ui.palettes.itemById(PALETTE_ID)
     if palette:
@@ -467,6 +639,9 @@ def stop(_context):
     definition = ui.commandDefinitions.itemById(COMMAND_ID)
     if definition:
         definition.deleteMe()
+    update_definition = ui.commandDefinitions.itemById(UPDATE_COMMAND_ID)
+    if update_definition:
+        update_definition.deleteMe()
 
     if _server:
         _server.shutdown()
@@ -478,9 +653,10 @@ def stop(_context):
     _server_token = None
 
     with _jobs_lock:
-        jobs = list(_jobs.values())
-        _jobs.clear()
-    for job in jobs:
-        shutil.rmtree(job['directory'], ignore_errors=True)
+        for job in _jobs.values():
+            job['retired'] = True
+    # Requests already reading/writing keep their job until their finalizer runs.
+    _clean_retired_jobs()
 
     _handlers.clear()
+    _palette_handlers.clear()

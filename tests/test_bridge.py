@@ -24,6 +24,7 @@ def _load_addin():
     core.CommandEventHandler = _Handler
     core.CommandCreatedEventHandler = _Handler
     core.HTMLEventHandler = _Handler
+    core.CustomEventHandler = _Handler
     fusion.BRepBody = type('BRepBody', (), {'cast': staticmethod(lambda value: value)})
     fusion.BRepFace = type('BRepFace', (), {'cast': staticmethod(lambda _value: None)})
 
@@ -35,8 +36,9 @@ def _load_addin():
 
     root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
     path = os.path.join(root, 'BumpMeshForFusion.py')
-    specification = importlib.util.spec_from_file_location('bumpmesh_for_fusion', path)
+    specification = importlib.util.spec_from_file_location('bumpmesh_for_fusion', path, submodule_search_locations=[root])
     module = importlib.util.module_from_spec(specification)
+    sys.modules[specification.name] = module
     specification.loader.exec_module(module)
     return module
 

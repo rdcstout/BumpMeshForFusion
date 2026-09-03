@@ -3,7 +3,9 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
-VERSION=${1:-0.1.0}
+MANIFEST_VERSION=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$PROJECT_DIR/BumpMeshForFusion.manifest")
+VERSION=${1:-$MANIFEST_VERSION}
+[ "$VERSION" = "$MANIFEST_VERSION" ] || { echo "Installer version must match the add-in manifest." >&2; exit 1; }
 DIST_DIR="$PROJECT_DIR/dist"
 BUILD_DIR="$PROJECT_DIR/build/macos"
 PAYLOAD_DIR="$BUILD_DIR/payload"
@@ -20,6 +22,9 @@ rsync -a \
   --exclude 'dist' \
   --exclude 'packaging' \
   --exclude 'tests' \
+  --exclude '__pycache__' \
+  --exclude '*.pyc' \
+  --exclude '.DS_Store' \
   "$PROJECT_DIR/" "$STAGED_ADDIN/"
 
 chmod +x "$STAGED_ADDIN/Uninstall BumpMesh for Fusion.command"

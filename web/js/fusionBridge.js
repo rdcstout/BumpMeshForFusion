@@ -18,34 +18,46 @@ if (hosted) {
 
   const status = document.createElement('div');
   status.className = 'fusion-status visible';
+  status.setAttribute('role', 'status');
+  status.setAttribute('aria-live', 'polite');
   status.textContent = 'Loading selected Fusion body…';
   document.body.appendChild(status);
 
+  let hideTimer;
   async function saveBinary(buffer, filename, mime) {
+    clearTimeout(hideTimer);
+    status.classList.remove('error');
     status.textContent = `Preparing ${filename}…`;
     status.classList.add('visible');
     const query = new URLSearchParams({token, filename});
-    const response = await fetch(`/api/jobs/${jobId}/output?${query}`, {
-      method: 'POST',
-      headers: {'Content-Type': mime || 'application/octet-stream'},
-      body: buffer,
-    });
-    if (!response.ok) {
-      const detail = await response.text();
-      throw new Error(`Fusion export bridge failed: ${detail}`);
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/output?${query}`, {
+        method: 'POST',
+        headers: {'Content-Type': mime || 'application/octet-stream'},
+        body: buffer,
+      });
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`Fusion export bridge failed: ${detail}`);
+      }
+      const output = await response.json();
+      if (!window.adsk || typeof window.adsk.fusionSendData !== 'function') {
+        throw new Error('The Fusion palette bridge is unavailable.');
+      }
+      const rawResult = await window.adsk.fusionSendData(
+        'saveOutput',
+        JSON.stringify(output),
+      );
+      const result = typeof rawResult === 'string' ? JSON.parse(rawResult) : rawResult;
+      if (!['saved', 'cancelled'].includes(result?.status)) throw new Error(result?.message || 'Fusion could not save the export.');
+      status.textContent = result.status === 'saved' ? 'Textured file saved.' : 'Save cancelled.';
+      hideTimer = setTimeout(() => status.classList.remove('visible'), 2200);
+      return result;
+    } catch (error) {
+      status.textContent = error.message || 'Fusion could not save the export. Try exporting again.';
+      status.classList.add('error', 'visible');
+      throw error;
     }
-    const output = await response.json();
-    if (!window.adsk || typeof window.adsk.fusionSendData !== 'function') {
-      throw new Error('The Fusion palette bridge is unavailable.');
-    }
-    const rawResult = await window.adsk.fusionSendData(
-      'saveOutput',
-      JSON.stringify(output),
-    );
-    const result = typeof rawResult === 'string' ? JSON.parse(rawResult) : rawResult;
-    if (result.status === 'error') throw new Error(result.message || 'Fusion could not save the export.');
-    status.textContent = result.status === 'saved' ? 'Textured file saved.' : 'Save cancelled.';
-    setTimeout(() => status.classList.remove('visible'), 2200);
   }
 
   window.bumpMeshFusionBridge = {saveBinary};
@@ -54,7 +66,15 @@ if (hosted) {
     try {
       if (!window.bumpMeshHost) {
         await new Promise((resolve) => {
-          window.addEventListener('bumpmesh-host-ready', resolve, {once: true});
+          // Slow loading can still recover; the timer gives guidance, not a false abort.
+          const timer = setTimeout(() => {
+            status.textContent = 'BumpMesh is taking longer to load. Check your internet connection; if it stays here, close this panel and open BumpMesh again.';
+          }, 30000);
+          window.addEventListener('bumpmesh-host-ready', () => {
+            clearTimeout(timer);
+            status.textContent = 'Loading selected Fusion body…';
+            resolve();
+          }, {once: true});
         });
       }
       const query = new URLSearchParams({token});
@@ -70,7 +90,7 @@ if (hosted) {
         throw new Error('BumpMesh did not expose its Fusion surface-selection hook.');
       }
       window.bumpMeshHost.initializeFusionSurfaceSelection();
-      status.remove();
+      status.classList.remove('visible');
     } catch (error) {
       status.textContent = error.message;
       status.classList.add('error');

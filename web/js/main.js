@@ -4833,17 +4833,19 @@ async function handleExport(format = 'stl') {
     const ampLabel = settings.amplitude.toFixed(2).replace('.', 'p');
     const baseName = `${currentStlName}_${texLabel}_amp${ampLabel}`;
 
+    let saveResult;
     if (format === '3mf') {
       setProgress(0.97, t('progress.writing3mf'));
       await yieldFrame();
       if (exportToken !== myToken) return;
-      export3MF(finalGeometry, `${baseName}.3mf`);
+      saveResult = await export3MF(finalGeometry, `${baseName}.3mf`);
     } else {
       setProgress(0.97, t('progress.writingStl'));
       await yieldFrame();
       if (exportToken !== myToken) return;
-      exportSTL(finalGeometry, `${baseName}.stl`);
+      saveResult = await exportSTL(finalGeometry, `${baseName}.stl`);
     }
+    if (saveResult?.status === 'cancelled') return;
     exportSucceeded = true;
 
     setProgress(1.0, t('progress.done'));

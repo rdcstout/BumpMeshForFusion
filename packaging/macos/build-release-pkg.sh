@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_dir="${0:A:h}"
 project_dir="${script_dir:h:h}"
-version="${1:-0.1.1}"
+version="${1:-$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$project_dir/BumpMeshForFusion.manifest")}"
 notary_profile="${BUMPMESH_NOTARY_PROFILE:-spooly-notary}"
 installer_identity="${BUMPMESH_INSTALLER_IDENTITY:-Developer ID Installer: Roger Stout (W3WPVL2V32)}"
 package_path="$project_dir/dist/BumpMeshForFusion-macOS.pkg"

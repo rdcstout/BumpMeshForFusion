@@ -18,6 +18,17 @@ The BumpMesh palette docks inside the right side of Fusion and scales to 48%
 of the current modeling viewport, so it adapts to different screen sizes on
 both macOS and Windows.
 
+## Updates
+
+Choose **Check for Updates** from the **BUMPMESH** menu. A newer compatible
+release offers a download link; installation is always your choice.
+Automatic checks run quietly about once a week while Fusion is running.
+You can disable them in the same dialog and press **Done** to save the setting.
+An available update is indicated in the menu, without interrupting your work.
+
+BumpMesh loads some dependencies from the internet, so an internet connection
+is required when those dependencies are not already cached.
+
 ## Install
 
 Quit Fusion, download the installer for your computer, and run it. Reopen
@@ -39,10 +50,14 @@ Restart Fusion after installing or updating the add-in.
 
 ## Development
 
-Run the bridge tests with `python3 -m unittest discover -s tests -v`.
+Run the integration tests with `python3 -B -m unittest discover -s tests -v`
+and `node --test tests/test_fusion_bridge.cjs` (Node 22 or newer).
 Installer sources are under `packaging/`; the GitHub Actions workflow builds
 the macOS package, Windows installer, and manual installation archive from the
 same commit.
+CI packages are build artifacts, not signed release approval. Public macOS
+releases use `packaging/macos/build-release-pkg.sh` for signing, notarization,
+stapling, and Gatekeeper verification. Installer versions must match the manifest.
 
 ### Uninstall
 

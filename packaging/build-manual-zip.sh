@@ -17,6 +17,9 @@ rsync -a \
   --exclude 'dist' \
   --exclude 'packaging' \
   --exclude 'tests' \
+  --exclude '__pycache__' \
+  --exclude '*.pyc' \
+  --exclude '.DS_Store' \
   "$PROJECT_DIR/" "$STAGED_ADDIN/"
 
 chmod +x "$STAGED_ADDIN/Uninstall BumpMesh for Fusion.command"

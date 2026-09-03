@@ -5,21 +5,36 @@ on:
     inputs:
       version:
         description: Installer version
-        required: true
-        default: 0.1.0
+        required: false
   push:
+    branches:
+      - main
     tags:
       - "v*"
+  pull_request:
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -B -m unittest discover -s tests -v
+      - run: node --test tests/test_fusion_bridge.cjs
   macos:
+    needs: test
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: Build macOS installer
         run: |
           VERSION="${{ inputs.version }}"
-          if [ -z "$VERSION" ]; then VERSION="${GITHUB_REF_NAME#v}"; fi
+          if [ -z "$VERSION" ] && [ "$GITHUB_REF_TYPE" = tag ]; then VERSION="${GITHUB_REF_NAME#v}"; fi
           chmod +x packaging/macos/build-pkg.sh packaging/macos/scripts/postinstall
           packaging/macos/build-pkg.sh "$VERSION"
       - uses: actions/upload-artifact@v4
@@ -28,6 +43,7 @@ jobs:
           path: dist/BumpMeshForFusion-macOS.pkg
 
   manual:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +57,7 @@ jobs:
           path: dist/BumpMeshForFusion-Manual.zip
 
   windows:
+    needs: test
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -51,7 +68,7 @@ jobs:
         shell: powershell
         run: |
           $version = "${{ inputs.version }}"
-          if (-not $version) { $version = "${env:GITHUB_REF_NAME}".TrimStart("v") }
+          if (-not $version -and $env:GITHUB_REF_TYPE -eq 'tag') { $version = "${env:GITHUB_REF_NAME}".TrimStart("v") }
           .\packaging\windows\build-installer.ps1 -Version $version
       - uses: actions/upload-artifact@v4
         with:
