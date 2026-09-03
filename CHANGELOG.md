@@ -2,8 +2,8 @@
 
 ## 0.1.1 - 2026-09-03
 
-- Restore the original 1100-pixel BumpMesh panel width while keeping the
-  palette docked inside Fusion.
+- Size the docked BumpMesh palette to 48 percent of Fusion's current modeling
+  viewport on macOS and Windows instead of using fixed screen dimensions.
 
 ## 0.1.0 - 2026-09-03
 

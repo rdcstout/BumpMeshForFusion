@@ -12,6 +12,10 @@ source Fusion body and its timeline are never modified.
 4. Choose **Export STL** or **Export 3MF**.
 5. Choose the destination in Fusion's native save dialog.
 
+The BumpMesh palette docks inside the right side of Fusion and scales to 48%
+of the current modeling viewport, so it adapts to different screen sizes on
+both macOS and Windows.
+
 ## Install
 
 Quit Fusion, download the installer for your computer, and run it. Reopen
@@ -33,6 +37,13 @@ into the appropriate directory:
 - Windows: `%APPDATA%\Autodesk\FusionAddins\`
 
 Restart Fusion after installing or updating the add-in.
+
+## Development
+
+Run the bridge tests with `python3 -m unittest discover -s tests -v`.
+Installer sources are under `packaging/`; the GitHub Actions workflow builds
+the macOS package, Windows installer, and manual installation archive from the
+same commit.
 
 ### Uninstall
 

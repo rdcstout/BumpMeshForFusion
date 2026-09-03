@@ -8,6 +8,7 @@ DIST_DIR="$PROJECT_DIR/dist"
 BUILD_DIR="$PROJECT_DIR/build/macos"
 PAYLOAD_DIR="$BUILD_DIR/payload"
 STAGED_ADDIN="$PAYLOAD_DIR/private/tmp/com.extrusiontherapy.bumpmeshforfusion/BumpMeshForFusion"
+SIGNING_IDENTITY=${BUMPMESH_INSTALLER_IDENTITY:-}
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$STAGED_ADDIN" "$DIST_DIR"
@@ -24,12 +25,23 @@ rsync -a \
 chmod +x "$STAGED_ADDIN/Uninstall BumpMesh for Fusion.command"
 xattr -cr "$PAYLOAD_DIR"
 
-pkgbuild \
-  --root "$PAYLOAD_DIR" \
-  --scripts "$SCRIPT_DIR/scripts" \
-  --identifier "com.extrusiontherapy.bumpmeshforfusion" \
-  --version "$VERSION" \
-  --install-location / \
-  "$DIST_DIR/BumpMeshForFusion-macOS.pkg"
+if [ -n "$SIGNING_IDENTITY" ]; then
+  pkgbuild \
+    --root "$PAYLOAD_DIR" \
+    --scripts "$SCRIPT_DIR/scripts" \
+    --identifier "com.extrusiontherapy.bumpmeshforfusion" \
+    --version "$VERSION" \
+    --install-location / \
+    --sign "$SIGNING_IDENTITY" \
+    "$DIST_DIR/BumpMeshForFusion-macOS.pkg"
+else
+  pkgbuild \
+    --root "$PAYLOAD_DIR" \
+    --scripts "$SCRIPT_DIR/scripts" \
+    --identifier "com.extrusiontherapy.bumpmeshforfusion" \
+    --version "$VERSION" \
+    --install-location / \
+    "$DIST_DIR/BumpMeshForFusion-macOS.pkg"
+fi
 
 echo "$DIST_DIR/BumpMeshForFusion-macOS.pkg"

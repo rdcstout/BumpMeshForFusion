@@ -27,6 +27,9 @@ LEGACY_PANEL_ID = 'ExtrusionTherapyBumpMeshPanel'
 PANEL_NAME = 'BUMPMESH'
 PALETTE_ID = 'ExtrusionTherapyBumpMeshPalette'
 PALETTE_NAME = 'BumpMesh for Fusion'
+PALETTE_WIDTH_FRACTION = 0.48
+PALETTE_FALLBACK_WIDTH = 760
+PALETTE_FALLBACK_HEIGHT = 760
 MAX_UPLOAD_BYTES = 1_500_000_000
 
 _handlers = []
@@ -267,6 +270,16 @@ def _show_palette(job_id, source_name):
     palette = ui.palettes.itemById(PALETTE_ID)
     if palette:
         palette.deleteMe()
+        adsk.doEvents()
+
+    viewport = app.activeViewport
+    if viewport:
+        palette_width = max(1, round(viewport.width * PALETTE_WIDTH_FRACTION))
+        palette_height = max(1, viewport.height)
+    else:
+        palette_width = PALETTE_FALLBACK_WIDTH
+        palette_height = PALETTE_FALLBACK_HEIGHT
+
     palette = ui.palettes.add(
         PALETTE_ID,
         PALETTE_NAME,
@@ -274,8 +287,8 @@ def _show_palette(job_id, source_name):
         True,
         True,
         True,
-        1100,
-        760,
+        palette_width,
+        palette_height,
         True,
     )
     html_handler = _PaletteHTMLHandler()
@@ -291,6 +304,7 @@ def _show_palette(job_id, source_name):
     palette.dockingState = (
         adsk.core.PaletteDockingStates.PaletteDockStateRight
     )
+    palette.setSize(palette_width, palette_height)
     adsk.doEvents()
 
 
