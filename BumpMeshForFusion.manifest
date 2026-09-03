@@ -6,7 +6,7 @@
   "description": {
     "": "Send an editable Fusion body to BumpMesh and save the finished textured STL without changing the source model."
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runOnStartup": true,
   "supportedOS": "windows|mac",
   "editEnabled": true,

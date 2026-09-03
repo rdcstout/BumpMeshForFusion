@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1 - 2026-09-03
+
+- Restore the original 1100-pixel BumpMesh panel width while keeping the
+  palette docked inside Fusion.
+
 ## 0.1.0 - 2026-09-03
 
 - Add the BumpMesh command to Fusion's Solid workspace.

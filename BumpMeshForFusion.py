@@ -274,7 +274,7 @@ def _show_palette(job_id, source_name):
         True,
         True,
         True,
-        760,
+        1100,
         760,
         True,
     )
