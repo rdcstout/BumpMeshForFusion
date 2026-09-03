@@ -27,9 +27,6 @@ Fusion and the **BumpMesh** button will appear in the **BUMPMESH** panel.
 - [Download for Windows](https://github.com/rdcstout/BumpMeshForFusion/releases/latest/download/BumpMeshForFusion-Windows-Setup.exe)
 - [Manual installation ZIP](https://github.com/rdcstout/BumpMeshForFusion/releases/latest/download/BumpMeshForFusion-Manual.zip)
 
-The Windows build is pending its first on-device Fusion test. Until that test
-is complete, the repository and release remain private.
-
 ### Manual installation
 
 Download the manual installation ZIP and copy the complete `BumpMeshForFusion` folder
