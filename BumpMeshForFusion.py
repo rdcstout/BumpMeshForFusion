@@ -31,7 +31,7 @@ LEGACY_PANEL_ID = 'ExtrusionTherapyBumpMeshPanel'
 PANEL_NAME = 'BUMPMESH'
 PALETTE_ID = 'ExtrusionTherapyBumpMeshPalette'
 PALETTE_NAME = 'BumpMesh for Fusion'
-PALETTE_WIDTH_FRACTION = 0.48
+PALETTE_WIDTH_FRACTION = 0.55
 PALETTE_FALLBACK_WIDTH = 760
 PALETTE_FALLBACK_HEIGHT = 760
 MAX_UPLOAD_BYTES = 1_500_000_000
@@ -340,7 +340,7 @@ def _show_palette(job_id, source_name):
         adsk.core.PaletteDockingOptions.PaletteDockOptionsToVerticalAndHorizontal
     )
     if hasattr(palette, 'isDockedInCanvas'):
-        palette.isDockedInCanvas = False
+        palette.isDockedInCanvas = True
     # Docking keeps the web view inside Fusion on every monitor and uses the
     # same API on macOS and Windows. The user can resize the side panel.
     palette.dockingState = (
