@@ -83,3 +83,7 @@ This project incorporates BumpMesh and is licensed under AGPL-3.0-only. See
 The bundled BumpMesh web application is based on
 [CNCKitchen/stlTexturizer](https://github.com/CNCKitchen/stlTexturizer), commit
 `a6ac179149b8a17c71a9469dd4cb6f866c0c01d1`.
+
+## Contribution and security policies
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for changes and validation, and [SECURITY.md](SECURITY.md) for reporting suspected vulnerabilities.
