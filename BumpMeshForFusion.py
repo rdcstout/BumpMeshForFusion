@@ -368,17 +368,19 @@ class _BridgeHandler(http.server.SimpleHTTPRequestHandler):
                     'modified': int(os.path.getmtime(destination) * 1000),
                 }
             })
+            return
         except OSError:
-            try:
-                _json_response(self, 500, {'error': 'Custom map could not be saved. Check folder permissions and try again.'})
-            except OSError:
-                pass
+            pass
         finally:
             if staged and os.path.exists(staged):
                 try:
                     os.remove(staged)
                 except OSError:
                     pass
+        try:
+            _json_response(self, 500, {'error': 'Custom map could not be saved. Check folder permissions and try again.'})
+        except OSError:
+            pass
 
     def do_DELETE(self):
         path, query = self._request_parts()
