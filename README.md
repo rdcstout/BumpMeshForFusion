@@ -14,6 +14,9 @@ source Fusion body and its timeline are never modified.
 4. Choose **Export STL** or **Export 3MF**.
 5. Choose the destination in Fusion's native save dialog.
 
+Uploaded custom maps are saved in **My Maps** for reuse in later Fusion
+sessions. Choose a saved map to reuse it or use its delete button to remove it.
+
 The BumpMesh palette overlays the right side of Fusion and scales to 55%
 of the current modeling viewport, so it adapts to different screen sizes on
 both macOS and Windows.

@@ -24,6 +24,49 @@ if (hosted) {
   document.body.appendChild(status);
 
   let hideTimer;
+  async function responseError(response, fallback) {
+    try {
+      const payload = await response.json();
+      return new Error(payload.error || fallback);
+    } catch {
+      return new Error(fallback);
+    }
+  }
+
+  async function listUserTextures() {
+    const query = new URLSearchParams({token});
+    const response = await fetch(`/api/textures?${query}`);
+    if (!response.ok) throw await responseError(response, 'Saved maps could not be listed.');
+    return (await response.json()).textures || [];
+  }
+
+  async function loadUserTexture(item) {
+    const query = new URLSearchParams({token});
+    const response = await fetch(`/api/textures/${encodeURIComponent(item.id)}?${query}`);
+    if (!response.ok) throw await responseError(response, 'Saved map could not be loaded.');
+    const blob = await response.blob();
+    return new File([blob], item.id, {type: 'image/png'});
+  }
+
+  async function saveUserTexture(blob, filename) {
+    const query = new URLSearchParams({token, filename});
+    const response = await fetch(`/api/textures?${query}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'image/png'},
+      body: blob,
+    });
+    if (!response.ok) throw await responseError(response, 'Custom map could not be saved.');
+    return (await response.json()).texture;
+  }
+
+  async function deleteUserTexture(textureId) {
+    const query = new URLSearchParams({token});
+    const response = await fetch(`/api/textures/${encodeURIComponent(textureId)}?${query}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) throw await responseError(response, 'Saved map could not be deleted.');
+  }
+
   async function saveBinary(buffer, filename, mime) {
     clearTimeout(hideTimer);
     status.classList.remove('error');
@@ -60,7 +103,14 @@ if (hosted) {
     }
   }
 
-  window.bumpMeshFusionBridge = {saveBinary};
+  window.bumpMeshFusionBridge = {
+    saveBinary,
+    listUserTextures,
+    loadUserTexture,
+    saveUserTexture,
+    deleteUserTexture,
+  };
+  window.dispatchEvent?.(new Event('bumpmesh-fusion-bridge-ready'));
 
   async function loadSelectedBody() {
     try {

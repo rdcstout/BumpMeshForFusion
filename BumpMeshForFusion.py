@@ -6,6 +6,7 @@ import json
 import os
 import secrets
 import shutil
+import sys
 import tempfile
 import threading
 import traceback
@@ -35,6 +36,7 @@ PALETTE_WIDTH_FRACTION = 0.55
 PALETTE_FALLBACK_WIDTH = 760
 PALETTE_FALLBACK_HEIGHT = 760
 MAX_UPLOAD_BYTES = 1_500_000_000
+MAX_TEXTURE_BYTES = 20 * 1024 * 1024
 UPDATE_COMMAND_ID = 'BumpMeshCheckForUpdates'
 UPDATE_EVENT_ID = 'BumpMeshUpdateResult'
 
@@ -44,6 +46,7 @@ _server_thread = None
 _server_token = None
 _jobs = {}
 _jobs_lock = threading.Lock()
+_textures_lock = threading.Lock()
 _temporary_directory = None
 _updater = None
 _update_command = None
@@ -100,6 +103,65 @@ def _safe_name(value):
     return cleaned or 'FusionBody'
 
 
+def _user_texture_root():
+    """Return an update-safe, per-user home for persistent custom maps."""
+    if sys.platform == 'darwin':
+        base = os.path.join(os.path.expanduser('~'), 'Library', 'Application Support')
+    elif os.name == 'nt':
+        base = os.environ.get('APPDATA') or os.path.join(
+            os.path.expanduser('~'), 'AppData', 'Roaming'
+        )
+    else:
+        base = os.environ.get('XDG_DATA_HOME') or os.path.join(
+            os.path.expanduser('~'), '.local', 'share'
+        )
+    return os.path.join(base, 'Extrusion Therapy', 'BumpMeshForFusion', 'textures')
+
+
+def _texture_filename(value):
+    stem = os.path.splitext(value or 'Custom Map')[0]
+    safe_stem = _safe_name(stem)[:96]
+    if os.name == 'nt' and safe_stem.upper() in {
+        'CON', 'PRN', 'AUX', 'NUL',
+        'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
+        'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9',
+    }:
+        safe_stem = '_{}'.format(safe_stem)
+    return '{}.png'.format(safe_stem)
+
+
+def _texture_path(texture_id):
+    decoded = urllib.parse.unquote(texture_id or '')
+    if decoded != os.path.basename(decoded) or _texture_filename(decoded) != decoded:
+        return None
+    return os.path.join(_user_texture_root(), decoded)
+
+
+def _list_textures():
+    root = _user_texture_root()
+    try:
+        names = os.listdir(root)
+    except FileNotFoundError:
+        return []
+    items = []
+    for name in names:
+        path = _texture_path(name)
+        if not path or not os.path.isfile(path) or os.path.islink(path):
+            continue
+        try:
+            stat = os.stat(path)
+        except OSError:
+            continue
+        items.append({
+            'id': name,
+            'name': os.path.splitext(name)[0],
+            'size': stat.st_size,
+            'modified': int(stat.st_mtime * 1000),
+        })
+    items.sort(key=lambda item: (-item['modified'], item['name'].lower()))
+    return items
+
+
 def _json_response(handler, status, payload):
     body = json.dumps(payload).encode('utf-8')
     handler.send_response(status)
@@ -142,6 +204,36 @@ class _BridgeHandler(http.server.SimpleHTTPRequestHandler):
                 return
 
             pieces = [piece for piece in path.split('/') if piece]
+            if pieces == ['api', 'textures']:
+                try:
+                    textures = _list_textures()
+                except OSError:
+                    _json_response(self, 500, {'error': 'Saved maps could not be listed. Check folder permissions.'})
+                    return
+                _json_response(self, 200, {'textures': textures})
+                return
+
+            if len(pieces) == 3 and pieces[:2] == ['api', 'textures']:
+                texture_path = _texture_path(pieces[2])
+                if not texture_path or not os.path.isfile(texture_path) or os.path.islink(texture_path):
+                    _json_response(self, 404, {'error': 'Saved map not found.'})
+                    return
+                try:
+                    texture_file = open(texture_path, 'rb')
+                except OSError:
+                    _json_response(self, 404, {'error': 'Saved map could not be read.'})
+                    return
+                with texture_file:
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'image/png')
+                    self.send_header('Content-Length', str(os.fstat(texture_file.fileno()).st_size))
+                    self.end_headers()
+                    try:
+                        shutil.copyfileobj(texture_file, self.wfile)
+                    except OSError:
+                        pass  # The client disconnected after the response began.
+                return
+
             if len(pieces) == 4 and pieces[0] == 'api' and pieces[1] == 'jobs' and pieces[3] == 'source':
                 job_id = pieces[2]
                 with _job_access(job_id) as job:
@@ -169,6 +261,10 @@ class _BridgeHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         pieces = [piece for piece in path.split('/') if piece]
+        if pieces == ['api', 'textures']:
+            self._save_texture(query)
+            return
+
         if not (
             len(pieces) == 4
             and pieces[0] == 'api'
@@ -222,6 +318,90 @@ class _BridgeHandler(http.server.SimpleHTTPRequestHandler):
                     _json_response(self, 400, {'error': 'Upload interrupted. Export again to retry.'})
                 except OSError:
                     pass
+
+    def _save_texture(self, query):
+        try:
+            content_length = int(self.headers.get('Content-Length', '0'))
+        except ValueError:
+            content_length = 0
+        if content_length <= 0 or content_length > MAX_TEXTURE_BYTES:
+            _json_response(self, 413, {'error': 'Custom map must be a PNG smaller than 20 MB.'})
+            return
+        if self.headers.get_content_type() != 'image/png':
+            _json_response(self, 415, {'error': 'Custom maps must be saved as PNG images.'})
+            return
+
+        root = _user_texture_root()
+        staged = None
+        try:
+            os.makedirs(root, mode=0o700, exist_ok=True)
+            fd, staged = tempfile.mkstemp(prefix='.bumpmesh-map-', suffix='.tmp', dir=root)
+            with os.fdopen(fd, 'wb') as output_file:
+                remaining = content_length
+                while remaining:
+                    chunk = self.rfile.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        raise IOError('Custom map upload ended unexpectedly.')
+                    output_file.write(chunk)
+                    remaining -= len(chunk)
+            with open(staged, 'rb') as uploaded:
+                if uploaded.read(8) != b'\x89PNG\r\n\x1a\n':
+                    _json_response(self, 400, {'error': 'The uploaded data is not a valid PNG image.'})
+                    return
+
+            requested = _texture_filename(query.get('filename', ['Custom Map.png'])[0])
+            stem = os.path.splitext(requested)[0]
+            with _textures_lock:
+                candidate = requested
+                suffix = 2
+                while os.path.exists(os.path.join(root, candidate)):
+                    candidate = '{}-{}.png'.format(stem, suffix)
+                    suffix += 1
+                destination = os.path.join(root, candidate)
+                os.replace(staged, destination)
+                staged = None
+            _json_response(self, 201, {
+                'texture': {
+                    'id': candidate,
+                    'name': os.path.splitext(candidate)[0],
+                    'size': content_length,
+                    'modified': int(os.path.getmtime(destination) * 1000),
+                }
+            })
+        except OSError:
+            try:
+                _json_response(self, 500, {'error': 'Custom map could not be saved. Check folder permissions and try again.'})
+            except OSError:
+                pass
+        finally:
+            if staged and os.path.exists(staged):
+                try:
+                    os.remove(staged)
+                except OSError:
+                    pass
+
+    def do_DELETE(self):
+        path, query = self._request_parts()
+        if not self._authorized(query):
+            _json_response(self, 403, {'error': 'Unauthorized request.'})
+            return
+        pieces = [piece for piece in path.split('/') if piece]
+        if len(pieces) != 3 or pieces[:2] != ['api', 'textures']:
+            _json_response(self, 404, {'error': 'Unknown API route.'})
+            return
+        texture_path = _texture_path(pieces[2])
+        if not texture_path:
+            _json_response(self, 404, {'error': 'Saved map not found.'})
+            return
+        try:
+            with _textures_lock:
+                if not os.path.isfile(texture_path) or os.path.islink(texture_path):
+                    _json_response(self, 404, {'error': 'Saved map not found.'})
+                    return
+                os.remove(texture_path)
+            _json_response(self, 200, {'status': 'deleted'})
+        except OSError:
+            _json_response(self, 500, {'error': 'Saved map could not be deleted.'})
 
 
 def _start_server():

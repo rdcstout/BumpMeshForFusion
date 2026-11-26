@@ -147,11 +147,6 @@
             </button>
           </div>
         </div>
-        <div id="store-cta-wrapper">
-          <span id="store-cta">
-            <span data-i18n-html="cta.store">Support this tool? Shop at <a href="https://geni.us/CNCStoreTexture" target="_blank" rel="noopener noreferrer">CNCKitchen.STORE</a> or send a tip via <a href="https://www.paypal.me/CNCKitchen" target="_blank" rel="noopener noreferrer">PayPal</a> / <a href="https://ko-fi.com/cnckitchen" target="_blank" rel="noopener noreferrer">Ko-fi</a></span><button id="store-cta-dismiss" aria-label="Dismiss">&times;</button>
-          </span>
-        </div>
       </div>
       <div id="viewport-footer">
         <span id="mesh-info" class="mesh-info"></span>
@@ -212,7 +207,7 @@
             <button id="rotate-reset-btn" class="rotate-reset-btn" data-i18n="ui.rotateReset">Reset</button>
           </div>
         </div>
-        <p style="margin:.4em 0 0;font-size:.75rem;opacity:.55;text-align:center;" data-i18n="ui.localProcessingNote">All processing runs locally in your browser â€” no data is uploaded.</p>
+        <p style="margin:.4em 0 0;font-size:.75rem;opacity:.55;text-align:center;" data-i18n="ui.localProcessingNote">All processing runs locally on your device â€” nothing is uploaded to us.</p>
       </section>
 
       <!-- Displacement Map -->
@@ -232,15 +227,94 @@
         <input type="file" id="texture-file-input" accept="image/*" hidden />
         <div id="custom-map-row" class="custom-map-row hidden">
           <div id="custom-map-swatch" class="preset-swatch custom-map-swatch" role="button" tabindex="0" data-i18n-title="ui.customMap" title="Custom map"></div>
+          <button id="custom-map-save" class="user-map-save hidden" data-i18n="ui.saveToMyMaps">Save to My Maps</button>
           <button id="custom-map-remove" class="custom-map-remove" data-i18n-title="ui.removeCustomMap" data-i18n-aria-label="ui.removeCustomMap" title="Remove custom map" aria-label="Remove custom map">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
+        <div id="user-maps-section" class="user-maps-section hidden">
+          <div class="user-maps-heading">
+            <span data-i18n="ui.myMaps">My Maps</span>
+            <span id="user-maps-status" class="user-maps-status" role="status" aria-live="polite"></span>
+          </div>
+          <div id="user-maps-grid" class="preset-grid user-maps-grid"></div>
+          <p id="user-maps-empty" class="user-maps-empty" data-i18n="ui.myMapsEmpty">Upload a map, then save it here for future Fusion sessions.</p>
+        </div>
         <div id="active-map-name" class="active-map-name" data-i18n="ui.noMapSelected">No map selected</div>
-        <div class="form-row slider-row">
-          <label for="texture-smoothing" data-i18n="labels.textureSmoothing" data-i18n-title="tooltips.textureSmoothing" title="Applies a Gaussian blur to the displacement map. Higher values produce softer, more gradual surface detail. 0 = off.">Texture Smoothing â“˜</label>
-          <input type="range" id="texture-smoothing" min="0" max="20" step="any" value="0" />
-          <input type="number" class="val" id="texture-smoothing-val" value="0" min="0" max="20" step="any" data-wheel-decimals="1" />
+      </section>
+
+      <!-- Surface Selection -->
+      <section class="panel-section">
+        <h2 id="excl-section-heading" data-i18n="sections.surfaceSelection" data-i18n-title="tooltips.surfaceMasking" title="Mask surfaces to control which areas receive displacement.">Surface Selection ⓘ</h2>
+        <p id="excl-hint" class="excl-hint" style="display:none"></p>
+
+        <div class="excl-mode-row">
+          <div class="excl-seg">
+            <button id="excl-mode-exclude" class="excl-seg-btn" aria-pressed="false"
+              data-i18n="excl.modeExclude" data-i18n-title="excl.modeExcludeTitle"
+              title="Exclude mode: painted surfaces will not receive texture displacement">Exclude</button>
+            <button id="excl-mode-include" class="excl-seg-btn" aria-pressed="false"
+              data-i18n="excl.modeIncludeOnly" data-i18n-title="excl.modeIncludeOnlyTitle"
+              title="Include Only mode: only painted surfaces will receive texture displacement">Include Only</button>
+          </div>
+        </div>
+
+        <div class="excl-tools">
+          <button id="excl-brush-btn" class="excl-tool-btn" aria-pressed="false"
+            data-i18n-title="excl.toolBrushTitle" title="Brush: paint triangles to exclude">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h2c1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/>
+              <path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h2c1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/>
+            </svg>
+            <span data-i18n="excl.toolBrush">Brush</span>
+          </button>
+          <button id="excl-bucket-btn" class="excl-tool-btn" aria-pressed="false"
+            data-i18n-title="excl.toolFillTitle" title="Bucket fill: flood-fill surface up to a threshold angle">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 11V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9"/>
+              <path d="M13 17h8m-4-4 4 4-4 4"/>
+            </svg>
+            <span data-i18n="excl.toolFill">Fill</span>
+          </button>
+        </div>
+
+        <div id="precision-masking-row" class="form-row precision-masking-row hidden">
+          <label class="precision-label">
+            <input type="checkbox" id="precision-masking-toggle" />
+            <span data-i18n="precision.label" data-i18n-title="precision.labelTitle"
+              title="Subdivide mesh in the background so the brush selects at finer granularity">Precision ⓘ</span>
+          </label>
+          <span id="precision-status" class="precision-status"></span>
+          <span id="precision-outdated" class="precision-outdated hidden" data-i18n="precision.outdated">⚠ Outdated</span>
+          <button id="precision-refresh-btn" class="precision-refresh-btn hidden"
+            data-i18n-title="precision.refreshTitle" title="Re-subdivide mesh to match current brush size">⟳</button>
+        </div>
+        <div id="precision-warning" class="precision-warning hidden"></div>
+
+        <div id="excl-brush-type-row" class="form-row hidden">
+          <span id="excl-brush-type-label" class="form-row-label" data-i18n="labels.type">Type</span>
+          <div class="excl-seg" role="group" aria-labelledby="excl-brush-type-label">
+            <button id="excl-brush-single" class="excl-seg-btn active" data-i18n="brushType.single">Single</button>
+            <button id="excl-brush-radius-btn" class="excl-seg-btn" data-i18n="brushType.circle">Circle</button>
+          </div>
+        </div>
+
+        <div id="excl-radius-row" class="form-row slider-row hidden">
+          <label for="excl-brush-radius-slider" data-i18n="labels.size">Size</label>
+          <input type="range" id="excl-brush-radius-slider" min="0.2" max="100" step="0.2" value="10" />
+          <input type="number" class="val" id="excl-brush-radius-val" value="10" min="0.2" max="100" step="0.2" data-wheel-decimals="1" />
+        </div>
+
+        <div id="excl-threshold-row" class="form-row slider-row hidden">
+          <label for="excl-threshold-slider" data-i18n="labels.maxAngle" data-i18n-title="tooltips.maxAngle" title="Maximum dihedral angle between adjacent triangles for the fill to cross">Max angle</label>
+          <input type="range" id="excl-threshold-slider" min="0" max="180" step="1" value="20" />
+          <input type="number" class="val" id="excl-threshold-val" value="20" min="0" max="180" step="1" />
+        </div>
+
+        <div class="excl-footer">
+          <span id="excl-count" class="excl-count">0 faces masked</span>
+          <span id="excl-shift-hint" class="excl-shift-hint" data-i18n="excl.shiftHint">Hold Shift to erase</span>
+          <button id="excl-clear-btn" class="excl-clear-btn" data-i18n="ui.clearAll">Clear All</button>
         </div>
       </section>
 
@@ -300,6 +374,11 @@
       <!-- Displacement -->
       <section class="panel-section">
         <h2 data-i18n="sections.displacement">Displacement</h2>
+        <div class="form-row slider-row">
+          <label for="texture-smoothing" data-i18n="labels.textureSmoothing" data-i18n-title="tooltips.textureSmoothing" title="Applies a Gaussian blur to the displacement map. Higher values produce softer, more gradual surface detail. 0 = off.">Texture Smoothing</label>
+          <input type="range" id="texture-smoothing" min="0" max="20" step="any" value="0" />
+          <input type="number" class="val" id="texture-smoothing-val" value="0" min="0" max="20" step="any" data-wheel-decimals="1" />
+        </div>
         <div class="form-row slider-row">
           <label for="amplitude" data-i18n="labels.textureHeight">Texture height (mm)</label>
           <input type="range" id="amplitude" min="0" max="2" step="0.01" value="0.5" />
@@ -391,90 +470,6 @@
           <label for="top-angle-limit" data-i18n="labels.topFaces" data-i18n-title="tooltips.topFaces" title="Suppress texture on upward-facing surfaces within this angle of horizontal">Top faces</label>
           <input type="range" id="top-angle-limit" min="0" max="90" step="1" value="0" />
           <input type="number" class="val" id="top-angle-limit-val" value="0" min="0" max="90" step="1" />
-        </div>
-
-        <!-- By Surface -->
-        <h3 class="panel-subsection-heading" id="excl-section-heading" data-i18n="sections.surfaceMasking" data-i18n-title="tooltips.surfaceMasking" title="Mask surfaces to control which areas receive displacement.">By Surface â“˜</h3>
-        <p id="excl-hint" class="excl-hint" style="display:none"></p>
-
-        <!-- Mode toggle: Exclude / Include Only -->
-        <div class="excl-mode-row">
-          <div class="excl-seg">
-            <button id="excl-mode-exclude" class="excl-seg-btn" aria-pressed="false"
-              data-i18n="excl.modeExclude" data-i18n-title="excl.modeExcludeTitle"
-              title="Exclude mode: painted surfaces will not receive texture displacement">Exclude</button>
-            <button id="excl-mode-include" class="excl-seg-btn" aria-pressed="false"
-              data-i18n="excl.modeIncludeOnly" data-i18n-title="excl.modeIncludeOnlyTitle"
-              title="Include Only mode: only painted surfaces will receive texture displacement">Include Only</button>
-          </div>
-        </div>
-
-        <!-- Tool buttons -->
-        <div class="excl-tools">
-          <button id="excl-brush-btn" class="excl-tool-btn" aria-pressed="false"
-            data-i18n-title="excl.toolBrushTitle"
-            title="Brush: paint triangles to exclude">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h2c1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/>
-              <path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h2c1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/>
-            </svg>
-            <span data-i18n="excl.toolBrush">Brush</span>
-          </button>
-          <button id="excl-bucket-btn" class="excl-tool-btn" aria-pressed="false"
-            data-i18n-title="excl.toolFillTitle"
-            title="Bucket fill: flood-fill surface up to a threshold angle">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M19 11V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9"/>
-              <path d="M13 17h8m-4-4 4 4-4 4"/>
-            </svg>
-            <span data-i18n="excl.toolFill">Fill</span>
-          </button>
-        </div>
-
-        <!-- Precision masking toggle -->
-        <div id="precision-masking-row" class="form-row precision-masking-row hidden">
-          <label class="precision-label">
-            <input type="checkbox" id="precision-masking-toggle" />
-            <span data-i18n="precision.label" data-i18n-title="precision.labelTitle"
-              title="Subdivide mesh in the background so the brush selects at finer granularity">Precision â“˜</span>
-          </label>
-          <span id="precision-status" class="precision-status"></span>
-          <span id="precision-outdated" class="precision-outdated hidden"
-            data-i18n="precision.outdated">âš  Outdated</span>
-          <button id="precision-refresh-btn" class="precision-refresh-btn hidden"
-            data-i18n-title="precision.refreshTitle"
-            title="Re-subdivide mesh to match current brush size">âŸ³</button>
-        </div>
-        <div id="precision-warning" class="precision-warning hidden"></div>
-
-        <!-- Brush type switcher (shown only when Brush is active) -->
-        <div id="excl-brush-type-row" class="form-row hidden">
-          <span id="excl-brush-type-label" class="form-row-label" data-i18n="labels.type">Type</span>
-          <div class="excl-seg" role="group" aria-labelledby="excl-brush-type-label">
-            <button id="excl-brush-single" class="excl-seg-btn active" data-i18n="brushType.single">Single</button>
-            <button id="excl-brush-radius-btn" class="excl-seg-btn" data-i18n="brushType.circle">Circle</button>
-          </div>
-        </div>
-
-        <!-- Radius slider (shown when Brush + Radius) -->
-        <div id="excl-radius-row" class="form-row slider-row hidden">
-          <label for="excl-brush-radius-slider" data-i18n="labels.size">Size</label>
-          <input type="range" id="excl-brush-radius-slider" min="0.2" max="100" step="0.2" value="10" />
-          <input type="number" class="val" id="excl-brush-radius-val" value="10" min="0.2" max="100" step="0.2" data-wheel-decimals="1" />
-        </div>
-
-        <!-- Bucket threshold (shown when Fill is active) -->
-        <div id="excl-threshold-row" class="form-row slider-row hidden">
-          <label for="excl-threshold-slider" data-i18n="labels.maxAngle" data-i18n-title="tooltips.maxAngle" title="Maximum dihedral angle between adjacent triangles for the fill to cross">Max angle</label>
-          <input type="range" id="excl-threshold-slider" min="0" max="180" step="1" value="20" />
-          <input type="number" class="val" id="excl-threshold-val" value="20" min="0" max="180" step="1" />
-        </div>
-
-        <!-- Footer: count + clear -->
-        <div class="excl-footer">
-          <span id="excl-count" class="excl-count">0 faces masked</span>
-          <span id="excl-shift-hint" class="excl-shift-hint" data-i18n="excl.shiftHint">Hold Shift to erase</span>
-          <button id="excl-clear-btn" class="excl-clear-btn" data-i18n="ui.clearAll">Clear All</button>
         </div>
 
         <!-- Boundary Falloff (applies to both angle and surface masking) -->
@@ -693,7 +688,7 @@
       <p class="imprint-text" data-i18n-html="imprint.privacyIntro"><strong>Responsible party</strong> (Verantwortlicher gem. Art. 4 Abs. 7 DSGVO): Stefan Hermann, Bahnhofstr. 2, 88145 Hergatz, Germany.</p>
       <ul class="license-list">
         <li data-i18n-html="imprint.privacyHosting">This website is hosted on <strong>GitHub Pages</strong> (GitHub Inc. / Microsoft Corp., 88 Colin P Kelly Jr St, San Francisco, CA 94107, USA). When you visit this site, GitHub may process your IP address in server logs. Legal basis: Art. 6(1)(f) DSGVO (legitimate interest in providing the website). See <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noopener">GitHub&rsquo;s Privacy Statement</a>.</li>
-        <li data-i18n-html="imprint.privacyLocal">This tool stores user preferences (language, theme) in your browser&rsquo;s <strong>localStorage</strong>. This data never leaves your device and is not transmitted to any server.</li>
+        <li data-i18n-html="imprint.privacyLocal">This tool stores user preferences (language, theme) in your browser&rsquo;s <strong>localStorage</strong>. In the Fusion add-in, maps you explicitly save to My Maps are stored in your user application-data folder. This data never leaves your device and is not transmitted to us.</li>
         <li data-i18n-html="imprint.privacyNoCookies">This website does <strong>not</strong> use cookies, analytics, or any tracking technologies.</li>
         <li data-i18n-html="imprint.privacyExternal">This site contains links to external websites (e.g., CNCKitchen.STORE, PayPal, Ko-fi). These sites have their own privacy policies, over which we have no control.</li>
         <li data-i18n-html="imprint.privacyRights">Under the GDPR you have the right to <strong>access, rectification, erasure, restriction of processing, data portability</strong>, and the right to <strong>lodge a complaint</strong> with a supervisory authority.</li>

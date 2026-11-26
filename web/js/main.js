@@ -49,6 +49,8 @@ let currentStlName    = 'model'; // base filename of the loaded STL (no extensio
 let currentStlExt     = '.stl';  // source file extension (.stl/.obj/.3mf/.step/.stp), for the stats line
 let activeMapEntry    = null;   // { name, texture, imageData, width, height, isCustom? }
 let _lastCustomMap    = null;   // most recent uploaded/imported custom-map entry, kept across preset switches so the thumbnail can re-activate it
+let _savedUserMaps    = new Map();
+let _userMapsGeneration = 0;
 let previewMaterial   = null;
 let isExporting       = false;
 let isBaking          = false;
@@ -263,7 +265,12 @@ const presetGrid     = document.getElementById('preset-grid');
 const activeMapName  = document.getElementById('active-map-name');
 const customMapRow      = document.getElementById('custom-map-row');
 const customMapSwatch   = document.getElementById('custom-map-swatch');
+const customMapSaveBtn  = document.getElementById('custom-map-save');
 const customMapRemoveBtn = document.getElementById('custom-map-remove');
+const userMapsSection   = document.getElementById('user-maps-section');
+const userMapsGrid      = document.getElementById('user-maps-grid');
+const userMapsEmpty     = document.getElementById('user-maps-empty');
+const userMapsStatus    = document.getElementById('user-maps-status');
 const meshInfo       = document.getElementById('mesh-info');
 const importProgress    = document.getElementById('import-progress');
 const importProgBar     = document.getElementById('import-progress-bar');
@@ -1198,34 +1205,40 @@ async function selectPreset(idx, swatchEl, applyDefaults = true) {
 
 // ── Custom-map thumbnail (below the upload button) ───────────────────────────
 
-/** Paint a small preview canvas of the custom map and reveal the thumbnail row. */
-function _showCustomMapThumb(entry) {
-  if (!entry || !entry.fullCanvas || !customMapSwatch) return;
-  customMapSwatch.innerHTML = '';
-  const THUMB_SIZE = 80;
+function _paintMapSwatch(swatch, entry, thumbSize = 80) {
+  if (!entry?.fullCanvas || !swatch) return;
+  swatch.innerHTML = '';
   const thumb = document.createElement('canvas');
-  thumb.width = THUMB_SIZE; thumb.height = THUMB_SIZE;
+  thumb.width = thumbSize; thumb.height = thumbSize;
   const ctx = thumb.getContext('2d');
-  // Aspect-fit the source canvas inside the square thumbnail.
   const sw = entry.fullCanvas.width, sh = entry.fullCanvas.height;
-  const scale = Math.min(THUMB_SIZE / sw, THUMB_SIZE / sh);
+  const scale = Math.min(thumbSize / sw, thumbSize / sh);
   const dw = sw * scale, dh = sh * scale;
-  ctx.drawImage(entry.fullCanvas, (THUMB_SIZE - dw) / 2, (THUMB_SIZE - dh) / 2, dw, dh);
-  customMapSwatch.appendChild(thumb);
+  ctx.drawImage(entry.fullCanvas, (thumbSize - dw) / 2, (thumbSize - dh) / 2, dw, dh);
+  swatch.appendChild(thumb);
 
   const label = document.createElement('span');
   label.className = 'preset-label';
   label.textContent = entry.name;
-  customMapSwatch.appendChild(label);
+  swatch.appendChild(label);
 
-  customMapSwatch.title = entry.name;
+  swatch.title = entry.name;
+  swatch.setAttribute('aria-label', entry.name);
+}
+
+/** Paint a small preview canvas of the current custom map and reveal its row. */
+function _showCustomMapThumb(entry) {
+  if (!entry || !entry.fullCanvas || !customMapSwatch) return;
+  _paintMapSwatch(customMapSwatch, entry);
   customMapRow.classList.remove('hidden');
+  customMapSaveBtn?.classList.toggle('hidden', !FUSION_HOSTED || Boolean(entry.savedTextureId));
 }
 
 function _hideCustomMapThumb() {
   if (!customMapRow) return;
   customMapRow.classList.add('hidden');
   if (customMapSwatch) customMapSwatch.innerHTML = '';
+  customMapSaveBtn?.classList.add('hidden');
 }
 
 /** Promote the kept-aside custom map back to the active map. No defaults reset. */
@@ -1236,6 +1249,145 @@ function _activateCustomMap() {
   customMapSwatch.classList.add('active');
   activeMapName.textContent = _lastCustomMap.name;
   updatePreview();
+}
+
+function _activateUserMap(entry, swatch) {
+  activeMapEntry = entry;
+  document.querySelectorAll('.preset-swatch').forEach(s => s.classList.remove('active'));
+  swatch.classList.add('active');
+  activeMapName.textContent = entry.name;
+  resetTextureSmoothing();
+  updatePreview();
+}
+
+function _selectDefaultMap() {
+  const idx = IMAGE_PRESETS.findIndex(p => p.name === DEFAULT_PRESET_NAME);
+  if (idx >= 0 && _presetSwatches[idx] && PRESETS[idx]) {
+    selectPreset(idx, _presetSwatches[idx], /*applyDefaults=*/false);
+  } else {
+    activeMapEntry = null;
+    activeMapName.textContent = t('ui.noMapSelected');
+    updatePreview();
+  }
+}
+
+async function _refreshUserMaps() {
+  const bridge = window.bumpMeshFusionBridge;
+  if (!FUSION_HOSTED || !bridge?.listUserTextures || !userMapsSection) return;
+  const generation = ++_userMapsGeneration;
+  userMapsSection.classList.remove('hidden');
+  userMapsStatus.textContent = 'Loading…';
+  try {
+    const items = await bridge.listUserTextures();
+    const loaded = await Promise.all(items.map(async item => {
+      try {
+        const file = await bridge.loadUserTexture(item);
+        const entry = await loadCustomTexture(file);
+        entry.name = item.name;
+        entry.isCustom = true;
+        entry.savedTextureId = item.id;
+        return [item, entry];
+      } catch (error) {
+        console.error(`Failed to load saved map ${item.name}:`, error);
+        return null;
+      }
+    }));
+    if (generation !== _userMapsGeneration) return;
+    _savedUserMaps = new Map(loaded.filter(Boolean).map(([, entry]) => [entry.savedTextureId, entry]));
+    userMapsGrid.innerHTML = '';
+    for (const [item, entry] of loaded.filter(Boolean)) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'user-map-item';
+      const swatch = document.createElement('div');
+      swatch.className = 'preset-swatch';
+      swatch.setAttribute('role', 'button');
+      swatch.setAttribute('tabindex', '0');
+      _paintMapSwatch(swatch, entry);
+      if (activeMapEntry?.savedTextureId === item.id) swatch.classList.add('active');
+      swatch.addEventListener('click', () => _activateUserMap(entry, swatch));
+      swatch.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          _activateUserMap(entry, swatch);
+        }
+      });
+
+      const remove = document.createElement('button');
+      remove.className = 'user-map-delete';
+      remove.type = 'button';
+      remove.title = `${t('ui.deleteSavedMap')}: ${entry.name}`;
+      remove.setAttribute('aria-label', remove.title);
+      remove.textContent = '×';
+      remove.addEventListener('click', async event => {
+        event.stopPropagation();
+        if (!window.confirm(`Delete “${entry.name}” from My Maps?`)) return;
+        remove.disabled = true;
+        userMapsStatus.textContent = 'Deleting…';
+        try {
+          await bridge.deleteUserTexture(item.id);
+          if (activeMapEntry?.savedTextureId === item.id) _selectDefaultMap();
+          await _refreshUserMaps();
+          userMapsStatus.textContent = 'Deleted';
+        } catch (error) {
+          remove.disabled = false;
+          userMapsStatus.textContent = error.message || 'Delete failed';
+        }
+      });
+      wrapper.append(swatch, remove);
+      userMapsGrid.appendChild(wrapper);
+    }
+    userMapsEmpty.classList.toggle('hidden', _savedUserMaps.size > 0);
+    userMapsStatus.textContent = loaded.some(item => item === null) ? 'Some maps could not be loaded' : '';
+  } catch (error) {
+    if (generation !== _userMapsGeneration) return;
+    userMapsStatus.textContent = error.message || 'Could not load My Maps';
+  }
+}
+
+function _canvasPngBlob(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not create a PNG from this map.')), 'image/png');
+  });
+}
+
+async function _saveCustomMapEntry(entry) {
+  const bridge = window.bumpMeshFusionBridge;
+  if (!entry?.fullCanvas || !bridge?.saveUserTexture) return false;
+  customMapSaveBtn.disabled = true;
+  userMapsStatus.textContent = 'Saving…';
+  try {
+    const blob = await _canvasPngBlob(entry.fullCanvas);
+    const saved = await bridge.saveUserTexture(blob, entry.name || 'Custom Map.png');
+    entry.savedTextureId = saved.id;
+    customMapSaveBtn.classList.add('hidden');
+    await _refreshUserMaps();
+    // The upload row is only a staging/retry surface. Once Fusion has saved the
+    // map, My Maps owns its thumbnail; keeping both visible duplicates the same
+    // texture and gives it two different remove actions.
+    if (_lastCustomMap === entry) {
+      _lastCustomMap = null;
+      _hideCustomMapThumb();
+    }
+    userMapsStatus.textContent = `Saved ${saved.name}`;
+    return true;
+  } catch (error) {
+    customMapSaveBtn.classList.remove('hidden');
+    userMapsStatus.textContent = error.message || 'Save failed';
+    return false;
+  } finally {
+    customMapSaveBtn.disabled = false;
+  }
+}
+
+if (FUSION_HOSTED) {
+  window.addEventListener('bumpmesh-fusion-bridge-ready', _refreshUserMaps);
+  if (window.bumpMeshFusionBridge) queueMicrotask(_refreshUserMaps);
+}
+
+if (customMapSaveBtn) {
+  customMapSaveBtn.addEventListener('click', async () => {
+    await _saveCustomMapEntry(_lastCustomMap);
+  });
 }
 
 if (customMapSwatch) {
@@ -1253,14 +1405,7 @@ if (customMapRemoveBtn) {
     _hideCustomMapThumb();
     if (wasActive) {
       // Fall back to the default preset so the viewer keeps a usable texture.
-      const idx = IMAGE_PRESETS.findIndex(p => p.name === DEFAULT_PRESET_NAME);
-      if (idx >= 0 && _presetSwatches[idx] && PRESETS[idx]) {
-        selectPreset(idx, _presetSwatches[idx], /*applyDefaults=*/false);
-      } else {
-        activeMapEntry = null;
-        activeMapName.textContent = t('ui.noMapSelected');
-        updatePreview();
-      }
+      _selectDefaultMap();
     }
   });
 }
@@ -1412,6 +1557,10 @@ function wireEvents() {
       customMapSwatch.classList.add('active');
       resetTextureSmoothing();
       updatePreview();
+      // In Fusion, uploading a custom map means adding it permanently. Save
+      // immediately; the separate button is retained only as a retry if the
+      // local persistence request fails.
+      if (FUSION_HOSTED) await _saveCustomMapEntry(activeMapEntry);
     } catch (err) {
       console.error('Failed to load texture:', err);
     }
@@ -1642,11 +1791,6 @@ function wireEvents() {
   meshDiagDismiss.addEventListener('click', () => {
     meshDiagnostics.classList.add('hidden');
     clearDiagHighlight();
-  });
-
-  // ── Support banner dismiss ──
-  document.getElementById('store-cta-dismiss').addEventListener('click', () => {
-    document.getElementById('store-cta-wrapper').classList.add('store-cta-hidden');
   });
 
   // ── Export ──
